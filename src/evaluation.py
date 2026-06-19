@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
-import shap
 import os
 import pandas as pd
 
@@ -12,16 +11,30 @@ def export_metrics(y_true, y_pred, y_prob, target_names, model_name="Model", bes
         print(f"Best Parameters: {best_params}")
     print("="*50)
     
-    report = classification_report(y_true, y_pred, target_names=target_names)
-    print(report)
+    report = classification_report(
+        y_true,
+        y_pred,
+        target_names=target_names,
+        output_dict=True,
+        zero_division=0
+    )
+    report_df = pd.DataFrame(report).transpose()
+    report_df = report_df.drop(index='accuracy', errors='ignore')
+    report_df = report_df[['precision', 'recall', 'f1-score', 'support']]
+    report_df['support'] = report_df['support'].astype(int)
+    print(report_df.to_string(float_format=lambda value: f"{value:.4f}"))
     
     try:
-        roc_auc = roc_auc_score(y_true, y_prob, multi_class='ovr')
-        print(f"Multi-class ROC-AUC Score: {roc_auc:.4f}")
+        n_classes = len(pd.unique(y_true))
+        if n_classes == 2 and getattr(y_prob, 'ndim', 1) == 2:
+            roc_auc = roc_auc_score(y_true, y_prob[:, 1])
+        else:
+            roc_auc = roc_auc_score(y_true, y_prob, multi_class='ovr')
+        print(f"ROC-AUC Score (secondary): {roc_auc:.4f}")
     except Exception as e:
         print(f"Could not compute ROC-AUC: {e}")
         
-    return report
+    return report_df
 
 def save_confusion_matrix(y_true, y_pred, target_names, filename):
     plt.figure(figsize=(12, 10))

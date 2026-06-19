@@ -2,9 +2,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.decomposition import PCA
 from xgboost import XGBClassifier
-from imblearn.pipeline import Pipeline as ImbPipeline
-from imblearn.over_sampling import SMOTE
+from sklearn.pipeline import Pipeline
 from sklearn.model_selection import GridSearchCV
+from sklearn.utils.class_weight import compute_sample_weight
 
 def get_search_spaces():
     """Defines classifiers and hyperparameter spaces for evaluation."""
@@ -32,13 +32,12 @@ def get_search_spaces():
 
 def train_and_tune_structured(X_train, y_train, model_name, classifier, param_grid):
     """
-    Creates an ethical Pipeline embedding PCA, SMOTE, and the Classifier.
-    Prevents data leakage during cross-validation.
+    Creates a Pipeline with PCA and the classifier.
+    The structured dataset is already close to balanced, so no synthetic
+    oversampling is applied.
     """
-    # Build pipeline: PCA reduces complexity -> SMOTE balances classes -> Classifier learns
-    pipeline = ImbPipeline([
+    pipeline = Pipeline([
         ('pca', PCA(n_components=0.95, random_state=42)), # Keeps 95% of variance
-        ('smote', SMOTE(random_state=42)),
         ('classifier', classifier)
     ])
     
@@ -46,7 +45,7 @@ def train_and_tune_structured(X_train, y_train, model_name, classifier, param_gr
         pipeline, 
         param_grid, 
         cv=5, 
-        scoring='accuracy', 
+        scoring='f1_macro', 
         n_jobs=-1,
         verbose=1
     )
@@ -54,7 +53,7 @@ def train_and_tune_structured(X_train, y_train, model_name, classifier, param_gr
     return grid_search.best_estimator_, grid_search.best_params_, grid_search.best_score_
 
 def train_nlp_xgb(X_train, y_train, X_val, y_val):
-    """Optimized XGBoost Training for Text Data."""
+    """Optimized XGBoost Training for Text Data using balanced sample weights."""
     model = XGBClassifier(
         n_estimators=250, 
         learning_rate=0.05, 
@@ -65,5 +64,27 @@ def train_nlp_xgb(X_train, y_train, X_val, y_val):
         early_stopping_rounds=10,
         n_jobs=-1
     )
-    model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+    sample_weight = compute_sample_weight(class_weight='balanced', y=y_train)
+    model.fit(
+        X_train,
+        y_train,
+        sample_weight=sample_weight,
+        eval_set=[(X_val, y_val)],
+        verbose=False
+    )
+    return model
+
+def train_semantic_classifier(X_train, y_train):
+    """
+    Trains a balanced classifier over Sentence-BERT embeddings.
+
+    The embeddings already carry semantic information, so a simpler linear
+    classifier is a strong and interpretable baseline.
+    """
+    model = LogisticRegression(
+        max_iter=2000,
+        class_weight='balanced',
+        random_state=42
+    )
+    model.fit(X_train, y_train)
     return model
