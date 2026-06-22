@@ -1,185 +1,299 @@
 # Mental Health Project
 
-Projeto de classificacao de transtornos/condicoes de saude mental usando duas fontes de dados:
+Projeto acadêmico de Machine Learning para classificação de condições de saúde mental a partir de duas abordagens complementares:
 
 - dados estruturados de sintomas;
-- textos de relatos relacionados a saude mental.
+- textos de relatos relacionados à saúde mental.
 
-O projeto foi ajustado para evitar reamostragem sintetica desnecessaria, usar metricas mais adequadas que acuracia e incluir uma representacao semantica local baseada em Hugging Face/Sentence-BERT.
+O projeto compara modelos tradicionais, baseline textual com TF-IDF e uma abordagem semântica com Sentence-BERT local.
 
-> Este projeto tem finalidade academica e experimental. Ele nao deve ser usado como ferramenta de diagnostico medico.
+> **Aviso importante:** este projeto tem finalidade acadêmica e experimental. Ele não deve ser usado como ferramenta de diagnóstico médico, triagem clínica ou tomada de decisão em saúde.
 
-## Principais mudancas metodologicas
+## Objetivo
 
-- SMOTE foi removido dos experimentos estruturados e textuais.
-- A avaliacao prioriza precision, recall e F1-score, especialmente F1-macro.
-- O pipeline estruturado usa validacao cruzada com `scoring="f1_macro"`.
-- O pipeline textual agora compara:
-  - baseline lexical: TF-IDF + XGBoost;
-  - proposta semantica: Sentence-BERT local + Logistic Regression.
-- O tratamento de diferencas entre classes e feito por pesos (`class_weight` ou `sample_weight`), sem criar exemplos sinteticos.
+O objetivo é avaliar técnicas de classificação supervisionada em dois tipos de dados:
 
-## Estrutura
+1. **Sintomas estruturados:** classificação multiclasse usando variáveis binárias de sintomas.
+2. **Textos livres:** classificação de relatos usando representação lexical e representação semântica.
+
+A avaliação prioriza métricas adequadas para problemas multiclasse e com possíveis diferenças entre classes, principalmente **F1-score macro**.
+
+## Principais decisões metodológicas
+
+- Não é usada reamostragem sintética com SMOTE.
+- O pipeline estruturado usa validação cruzada com `scoring="f1_macro"`.
+- O pipeline textual compara:
+  - **baseline lexical:** TF-IDF + XGBoost;
+  - **modelo semântico:** Sentence-BERT + Logistic Regression.
+- O tratamento de diferenças entre classes é feito por pesos (`class_weight` ou `sample_weight`), sem criar exemplos artificiais.
+- A acurácia não é usada como métrica principal, pois pode esconder baixo desempenho em classes menores.
+
+## Estrutura do projeto
 
 ```text
-data/
-  illness_dataset.csv
-  Mental Health Disorder Detection Dataset.csv
+mental-health-project/
+  data/
+    illness_dataset.csv
+    Mental Health Disorder Detection Dataset.csv
 
-notebooks/
-  01_analise_exploratoria.ipynb
-  02_analise_exploratoria.ipynb
-  03_nlp_text_analysis.ipynb
-  04_nlp_text_analysis.ipynb
-  05_nlp_text_analysis.ipynb
+  exports/
+    embeddings/
+    models/
+    plots/
 
-src/
-  preprocessing.py
-  model.py
-  evaluation.py
+  notebooks/
+    01_analise_exploratoria.ipynb
+    02_analise_exploratoria.ipynb
+    03_nlp_text_analysis.ipynb
+    04_nlp_text_analysis.ipynb
+    05_nlp_text_analysis.ipynb
 
-main.py
-requirements.txt
+  src/
+    preprocessing.py
+    model.py
+    evaluation.py
+
+  main.py
+  requirements.txt
+  README.md
 ```
 
-## Pipelines
+## Bases de dados
 
-### 1. Dados estruturados
+### `data/illness_dataset.csv`
 
-O pipeline estruturado carrega `data/illness_dataset.csv`, separa treino e teste de forma estratificada e avalia multiplos classificadores:
+Base estruturada usada no primeiro pipeline.
 
-- Logistic Regression;
-- Random Forest;
-- XGBoost.
+- Quantidade verificada no projeto: **8.304 registros**.
+- Variáveis preditoras: **185 colunas** de sintomas.
+- Variável alvo: `Disease`.
+- Número de classes: **22 condições**.
 
-A busca de hiperparametros usa `GridSearchCV` com F1-macro, sem SMOTE.
+### `data/Mental Health Disorder Detection Dataset.csv`
 
-### 2. Textos com baseline TF-IDF
+Base textual usada no pipeline de NLP.
 
-O baseline textual usa `TfidfVectorizer` com n-gramas e XGBoost. Ele foi mantido como comparacao porque representa uma abordagem lexical: considera frequencia de palavras/termos, mas nao captura semantica profunda.
+- Quantidade verificada no projeto após remoção de nulos: **11.272 textos**.
+- Coluna de texto: `body`.
+- Coluna alvo: `category`.
+- Número de classes: **7 categorias**.
 
-### 3. Textos com embeddings semanticos
+## Pipelines implementados
 
-A versao principal de NLP usa o modelo local:
+### 1. Pipeline estruturado
+
+Arquivo principal: `main.py`  
+Funções auxiliares: `src/preprocessing.py`, `src/model.py`, `src/evaluation.py`
+
+Etapas:
+
+1. Carrega `data/illness_dataset.csv`.
+2. Separa `Disease` como variável alvo.
+3. Codifica as classes com `LabelEncoder`.
+4. Divide treino e teste com `train_test_split`, usando estratificação.
+5. Gera matriz de correlação das principais variáveis.
+6. Treina e ajusta três modelos com `GridSearchCV`:
+   - Logistic Regression;
+   - Random Forest;
+   - XGBoost.
+7. Avalia os modelos com precision, recall, F1-score, F1-macro, matriz de confusão e ROC-AUC quando aplicável.
+8. Salva o melhor pipeline estruturado.
+
+O pipeline de cada modelo usa:
+
+```text
+PCA(n_components=0.95) -> Classificador
+```
+
+### 2. Pipeline textual com TF-IDF
+
+Este é o baseline lexical de NLP.
+
+Etapas:
+
+1. Carrega `data/Mental Health Disorder Detection Dataset.csv`.
+2. Remove registros sem texto ou categoria.
+3. Codifica as classes com `LabelEncoder`.
+4. Vetoriza os textos com `TfidfVectorizer`.
+5. Treina um modelo XGBoost com pesos balanceados.
+6. Exporta relatório de métricas e matriz de confusão.
+
+Configuração principal do TF-IDF:
+
+```text
+max_features=5000
+ngram_range=(1, 2)
+min_df=5
+```
+
+### 3. Pipeline textual com Sentence-BERT
+
+Este é o pipeline semântico principal.
+
+Modelo usado:
 
 ```text
 sentence-transformers/all-MiniLM-L6-v2
 ```
 
-Esse modelo gera embeddings densos de 384 dimensoes para cada texto. Depois, os vetores sao classificados com Logistic Regression balanceada.
+Etapas:
 
-Os embeddings sao salvos em cache em:
+1. Converte os textos em embeddings semânticos.
+2. Normaliza os embeddings.
+3. Usa cache local dos vetores para evitar recomputação.
+4. Treina `LogisticRegression` com `class_weight="balanced"`.
+5. Exporta relatório de métricas e matriz de confusão.
 
-```text
-exports/embeddings/
-```
+O modelo Sentence-BERT gera vetores densos de **384 dimensões** por texto.
 
-Assim, a primeira execucao pode demorar mais porque baixa o modelo e gera os vetores. Execucoes posteriores reutilizam o cache quando o split e o modelo forem os mesmos.
+## Instalação
 
-## Instalacao
-
-No Windows/PowerShell:
-
-```powershell
-cd D:\fatec\mental-health-project
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
-```
-
-Se for criar um ambiente virtual novo:
+No Windows com PowerShell, dentro da pasta do projeto:
 
 ```powershell
-cd D:\fatec\mental-health-project
 python -m venv venv
 .\venv\Scripts\activate
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+```
+
+Se o ambiente virtual já existir:
+
+```powershell
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 ## Como executar
 
-Rodar tudo:
+Executar todos os pipelines:
 
 ```powershell
 .\venv\Scripts\python.exe main.py
 ```
 
-Rodar apenas o pipeline estruturado:
+Executar apenas o pipeline estruturado:
 
 ```powershell
 .\venv\Scripts\python.exe main.py structured
 ```
 
-Rodar apenas o pipeline de NLP:
+Executar apenas o pipeline de NLP:
 
 ```powershell
 .\venv\Scripts\python.exe main.py nlp
 ```
 
-## Teste rapido do Hugging Face local
+## Saídas geradas
 
-Use este comando para confirmar que o Sentence-BERT esta funcionando:
+Os resultados são salvos na pasta `exports/`.
 
-```powershell
-.\venv\Scripts\python.exe -c "from src.preprocessing import get_semantic_embeddings; print(get_semantic_embeddings(['I feel anxious every day'], show_progress_bar=False).shape)"
-```
-
-O resultado esperado e semelhante a:
-
-```text
-(1, 384)
-```
-
-Na primeira execucao, o modelo sera baixado do Hugging Face. Depois ele fica no cache local.
-
-## Saidas geradas
-
-Modelos e configuracoes:
+### Modelos
 
 ```text
 exports/models/
+  best_structured_pipeline.pkl
+  structured_encoder.pkl
+  nlp_model.pkl
+  nlp_tfidf_xgb_model.pkl
+  nlp_vectorizer.pkl
+  nlp_tfidf_vectorizer.pkl
+  nlp_semantic_classifier.pkl
+  nlp_semantic_config.pkl
+  nlp_encoder.pkl
 ```
 
-Graficos e matrizes de confusao:
+### Gráficos
 
 ```text
 exports/plots/
+  structured_correlation.png
+  cm_structured_LogisticRegression.png
+  cm_structured_RandomForest.png
+  cm_structured_XGBoost.png
+  cm_nlp_tfidf_xgb.png
+  cm_nlp_sentence_bert.png
 ```
 
-Embeddings semanticos em cache:
+### Cache de embeddings
 
 ```text
 exports/embeddings/
 ```
 
-Arquivos principais da versao semantica:
+Os arquivos `.npy` dessa pasta armazenam embeddings já calculados. Eles podem ser apagados com segurança, pois serão recriados na próxima execução do pipeline de NLP.
 
-- `exports/models/nlp_semantic_classifier.pkl`
-- `exports/models/nlp_semantic_config.pkl`
-- `exports/models/nlp_encoder.pkl`
-- `exports/plots/cm_nlp_sentence_bert.png`
+## Métricas utilizadas
 
-## Notebooks recomendados
-
-- `notebooks/04_nlp_text_analysis.ipynb`: baseline TF-IDF + XGBoost.
-- `notebooks/05_nlp_text_analysis.ipynb`: experimento principal com Sentence-BERT local.
-
-O notebook 05 e o mais importante para justificar a melhoria de tokenizacao/representacao textual, pois troca uma representacao baseada apenas em palavras por embeddings semanticos.
-
-## Metricas usadas
-
-O projeto evita usar acuracia como criterio principal. As metricas reportadas sao:
+O projeto reporta:
 
 - precision;
 - recall;
-- F1-score;
-- F1-macro;
-- matriz de confusao;
-- ROC-AUC apenas como metrica secundaria quando aplicavel.
+- F1-score por classe;
+- F1-score macro;
+- matriz de confusão;
+- ROC-AUC como métrica secundária quando aplicável.
 
-F1-macro e importante neste contexto porque calcula o desempenho medio dando peso igual para cada classe, reduzindo o risco de esconder desempenho ruim em classes menores.
+O **F1-score macro** é especialmente importante porque calcula a média das classes dando o mesmo peso para cada uma. Isso reduz o risco de uma classe majoritária dominar a avaliação.
 
-## Observacoes
+## Notebooks
 
-- Nao e necessario configurar token do Hugging Face para baixar o modelo publico usado neste projeto.
-- Pode aparecer um aviso sobre requisicoes nao autenticadas no Hugging Face; isso nao impede a execucao.
-- O tempo de execucao do NLP pode ser maior na primeira rodada por causa do download do modelo e da geracao dos embeddings.
-- O cache de embeddings pode ser apagado com seguranca; ele sera recriado na proxima execucao.
+Os notebooks registram etapas exploratórias e experimentais:
+
+- `01_analise_exploratoria.ipynb`: análise exploratória inicial.
+- `02_analise_exploratoria.ipynb`: continuidade da análise estruturada.
+- `03_nlp_text_analysis.ipynb`: exploração textual inicial.
+- `04_nlp_text_analysis.ipynb`: baseline TF-IDF + XGBoost.
+- `05_nlp_text_analysis.ipynb`: experimento principal com Sentence-BERT.
+
+Para justificar a evolução da representação textual, o notebook mais relevante é o `05_nlp_text_analysis.ipynb`, pois compara a ideia de representação baseada em termos com uma representação semântica por embeddings.
+
+## Verificações rápidas
+
+Verificar se os arquivos Python compilam:
+
+```powershell
+.\venv\Scripts\python.exe -m py_compile main.py src\preprocessing.py src\model.py src\evaluation.py
+```
+
+Verificar dependências instaladas:
+
+```powershell
+.\venv\Scripts\python.exe -m pip check
+```
+
+Testar o Sentence-BERT local:
+
+```powershell
+.\venv\Scripts\python.exe -c "from src.preprocessing import get_semantic_embeddings; print(get_semantic_embeddings(['I feel anxious every day'], show_progress_bar=False).shape)"
+```
+
+Resultado esperado:
+
+```text
+(1, 384)
+```
+
+Na primeira execução, o modelo público será baixado do Hugging Face. Depois, ele fica armazenado no cache local.
+
+## Arquivos de configuração
+
+### `.gitignore`
+
+O projeto ignora arquivos locais e temporários, como:
+
+- ambiente virtual `venv/`;
+- cache Python `__pycache__/`;
+- arquivos `.pyc`;
+- variáveis locais `.env`;
+- arquivos auxiliares de merge.
+
+### `requirements.txt`
+
+Lista as bibliotecas necessárias para executar os scripts, notebooks, modelos clássicos, XGBoost e Sentence-BERT.
+
+## Observações finais
+
+- Não é necessário configurar token do Hugging Face para baixar o modelo público usado neste projeto.
+- O pipeline de NLP pode demorar mais na primeira execução por causa do download do modelo e da geração dos embeddings.
+- Os resultados salvos em `exports/` documentam os artefatos gerados na execução final.
+- O projeto preserva uma separação simples entre pré-processamento, treinamento e avaliação, facilitando a leitura e a apresentação acadêmica.
